@@ -147,6 +147,30 @@ export const getMemberTransactions = async (memberId: string) => {
   }
 }
 
+export const getMemberLoans = async (memberId: string) => {
+  try {
+    const transactionsRef = ref(database, "Transactions")
+    const snapshot = await get(transactionsRef)
+    if (!snapshot.exists()) return []
+    
+    const transactions = snapshot.val()
+    const memberLoans = Object.values(transactions).filter((tx: any) => 
+      tx.memberId === memberId && tx.status === "borrowed"
+    )
+    
+    return memberLoans.map((loan: any) => ({
+      id: loan.id,
+      bookTitle: loan.bookTitle || "Buku",
+      borrowDate: loan.borrowDate || new Date().toISOString().split('T')[0],
+      dueDate: loan.dueDate || new Date().toISOString().split('T')[0],
+      status: loan.status || "borrowed"
+    }))
+  } catch (error) {
+    console.error("Error fetching member loans:", error)
+    return []
+  }
+}
+
 // Generate simple UID like "123"
 function generateSimpleUID(): string {
   return Math.floor(Math.random() * 9999).toString()

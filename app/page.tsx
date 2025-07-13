@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef, ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { registerMember, loginMember, type Member, updateMember, getMemberTransactions, updateMemberPassword } from "@/lib/auth"
+import { registerMember, loginMember, type Member, updateMember, getMemberTransactions, updateMemberPassword, getMemberLoans } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { Toaster } from "@/components/ui/toaster"
 import Swal from 'sweetalert2'
+import { CheckCircle, XCircle, X, Calendar, Book } from 'lucide-react';
 
 function formatDate(dateString: string) {
   const date = new Date(dateString);
@@ -50,26 +51,220 @@ function ScrollReveal({ children, className = "", threshold = 0.2 }: ScrollRevea
   )
 }
 
+// Komponen LibraryAlert untuk menampilkan informasi peminjaman
+function LibraryAlert({ onClose, userId }: { onClose: () => void; userId: string }) {
+  const [loanData, setLoanData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLoans = async () => {
+      try {
+        const loans = await getMemberLoans(userId);
+        setLoanData(loans);
+      } catch (error) {
+        console.error("Error fetching loans:", error);
+        setLoanData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchLoans();
+  }, [userId]);
+
+  // Fungsi untuk menghitung selisih hari
+  const getDaysDifference = (date1: string, date2: string) => {
+    const oneDay = 24 * 60 * 60 * 1000;
+    const firstDate = new Date(date1);
+    const secondDate = new Date(date2);
+    return Math.round((secondDate.getTime() - firstDate.getTime()) / oneDay);
+  };
+
+  // Pisahkan buku terlambat dan yang akan jatuh tempo
+  const currentDate = new Date().toISOString().split('T')[0];
+  const sevenDaysThreshold = 7;
+  let overdueLoans: any[] = [];
+  let upcomingLoans: any[] = [];
+
+  loanData.forEach(loan => {
+    const daysDiff = getDaysDifference(currentDate, loan.dueDate);
+    if (daysDiff < 0) {
+      overdueLoans.push({ ...loan, daysOverdue: Math.abs(daysDiff) });
+    } else if (daysDiff <= sevenDaysThreshold) {
+      upcomingLoans.push({ ...loan, daysLeft: daysDiff });
+    }
+  });
+
+  // Tentukan prioritas alert: merah jika ada terlambat, hijau jika ada yang akan jatuh tempo
+  let alertType: 'error' | 'success' | null = null;
+  let alertData: any[] = [];
+  let totalBooks = 0;
+  let alertTitle = '';
+  let alertMessage = '';
+  let alertDetail = '';
+
+  if (overdueLoans.length > 0) {
+    alertType = 'error';
+    alertData = overdueLoans;
+    totalBooks = overdueLoans.length;
+    alertTitle = 'BUKU TERLAMBAT!';
+    if (totalBooks === 1) {
+      const book = overdueLoans[0];
+      alertMessage = `Buku "${book.bookTitle}" sudah terlambat ${book.daysOverdue} hari dari jadwal pengembalian. Harap segera mengembalikan ke perpustakaan untuk menghindari denda.`;
+      alertDetail = `Jatuh tempo: ${book.dueDate}`;
+    } else {
+      const totalDays = Math.max(...overdueLoans.map((book: any) => book.daysOverdue));
+      alertMessage = `Anda memiliki ${totalBooks} buku yang terlambat dikembalikan. Beberapa sudah terlambat hingga ${totalDays} hari. Harap segera mengembalikan semua buku untuk menghindari denda.`;
+      alertDetail = `${totalBooks} buku perlu dikembalikan segera`;
+    }
+  } else if (upcomingLoans.length > 0) {
+    alertType = 'success';
+    alertData = upcomingLoans;
+    totalBooks = upcomingLoans.length;
+    alertTitle = 'PENGINGAT PENGEMBALIAN';
+    if (totalBooks === 1) {
+      const book = upcomingLoans[0];
+      const daysText = book.daysLeft === 0 ? 'hari ini' : `${book.daysLeft} hari lagi`;
+      alertMessage = `Buku "${book.bookTitle}" akan jatuh tempo ${daysText}. Jangan lupa untuk mengembalikan tepat waktu agar tidak terkena denda.`;
+      alertDetail = `Jatuh tempo: ${book.dueDate}`;
+    } else {
+      const minDays = Math.min(...upcomingLoans.map((book: any) => book.daysLeft));
+      const daysText = minDays === 0 ? 'hari ini' : `${minDays} hari lagi`;
+      alertMessage = `Anda memiliki ${totalBooks} buku yang akan jatuh tempo dalam waktu dekat. Yang paling cepat ${daysText}. Pastikan untuk mengembalikan semua buku tepat waktu.`;
+      alertDetail = `${totalBooks} buku perlu dikembalikan segera`;
+    }
+  }
+
+  // Jika loading, tampilkan loading
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memuat data peminjaman...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Jika tidak ada alert, tidak tampilkan apa-apa
+  if (!alertType) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 overflow-hidden">
+        {/* Header dengan Icon */}
+        <div className={`p-6 text-center ${
+          alertType === 'success' ? 'bg-green-50' : 'bg-red-50'
+        }`}>
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+          {/* Icon */}
+          <div className="mb-4">
+            {alertType === 'success' ? (
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                <CheckCircle className="w-8 h-8 text-green-600" />
+              </div>
+            ) : (
+              <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+                <XCircle className="w-8 h-8 text-red-600" />
+              </div>
+            )}
+          </div>
+          {/* Title */}
+          <h2 className={`text-xl font-bold mb-2 ${
+            alertType === 'success' ? 'text-green-800' : 'text-red-800'
+          }`}>{alertType === 'success' ? 'PENGINGAT' : 'PERINGATAN'}</h2>
+          <h3 className={`text-lg font-semibold ${
+            alertType === 'success' ? 'text-green-700' : 'text-red-700'
+          }`}>{alertTitle}</h3>
+        </div>
+        {/* Content */}
+        <div className="p-6">
+          <p className="text-gray-700 text-center mb-4 leading-relaxed">
+            {alertMessage}
+          </p>
+          {/* Badge jumlah buku */}
+          <div className={`p-3 rounded-lg mb-6 flex items-center justify-center gap-2 font-medium text-sm ${
+            alertType === 'success' ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-800'
+          }`}>
+            <Calendar className={`w-4 h-4 ${alertType === 'success' ? 'text-green-600' : 'text-red-600'}`} />
+            {alertDetail}
+          </div>
+          {/* List buku */}
+          {alertData.length > 0 && (
+            <div className="mb-6">
+              <div className="space-y-2">
+                {alertData.slice(0, 3).map((book, index) => (
+                  <div key={book.id || index} className="flex items-center p-2 bg-gray-50 rounded-lg">
+                    <Book className="w-4 h-4 text-gray-500 mr-2" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {book.bookTitle}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {alertType === 'success' 
+                          ? `${book.daysLeft === 0 ? 'Jatuh tempo hari ini' : `${book.daysLeft} hari lagi`}`
+                          : `Terlambat ${book.daysOverdue} hari`
+                        }
+                      </p>
+                    </div>
+                  </div>
+                ))}
+                {alertData.length > 3 && (
+                  <p className="text-xs text-gray-500 text-center">
+                    dan {alertData.length - 3} buku lainnya...
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {/* Action Button */}
+          <button
+            onClick={onClose}
+            className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
+              alertType === 'success' 
+                ? 'bg-green-600 hover:bg-green-700' 
+                : 'bg-red-600 hover:bg-red-700'
+            }`}
+          >
+            {alertType === 'success' ? 'Mengerti' : 'Akan Segera Dikembalikan'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [currentView, setCurrentView] = useState<"home" | "login" | "register" | "dashboard">("home")
   const [user, setUser] = useState<Member | null>(null)
   const [loading, setLoading] = useState(false)
   const { toast } = useToast();
+  const [showLibraryAlert, setShowLibraryAlert] = useState(false);
 
   const handleLogin = async (email: string, password: string) => {
-    setLoading(true)
-    const result = await loginMember(email, password)
-    setLoading(false)
+    setLoading(true);
+    const result = await loginMember(email, password);
+    setLoading(false);
 
     if (result.success) {
-      setUser(result.member)
-      setCurrentView("dashboard")
+      setUser(result.member);
+      setCurrentView("dashboard");
       Swal.fire({
         icon: 'success',
         title: 'Login Berhasil',
         text: 'Selamat datang di e-PERPUS.',
         confirmButtonColor: '#6366f1',
         customClass: { popup: 'rounded-xl' }
+      }).then(() => {
+        // Tampilkan library alert setelah user klik OK pada pop up login
+        setShowLibraryAlert(true);
       });
     } else {
       Swal.fire({
@@ -244,6 +439,7 @@ export default function HomePage() {
         </div>
       </footer>
       <Toaster />
+      {/* Hapus render LibraryAlert dari HomePage, cukup render di DashboardPage */}
     </div>
   )
 }
@@ -689,6 +885,7 @@ function DashboardPage({ user, onLogout }: { user: Member; onLogout: () => void 
   const [userState, setUserState] = useState(user)
   const [transactions, setTransactions] = useState<any[]>([])
   const [loadingTx, setLoadingTx] = useState(false)
+  const [showLibraryAlert, setShowLibraryAlert] = useState(true);
 
   useEffect(() => {
     if (activeTab === "riwayat") {
@@ -873,6 +1070,9 @@ function DashboardPage({ user, onLogout }: { user: Member; onLogout: () => void 
         {/* Content Area */}
         <main className="flex-1 p-6">
           <div className="max-w-4xl mx-auto">
+            {showLibraryAlert && (
+              <LibraryAlert onClose={() => setShowLibraryAlert(false)} userId={user.id!} />
+            )}
             <ScrollReveal key={activeTab}>
               <Card className="bg-white rounded-2xl shadow-lg overflow-hidden">
                 {/* Card Header */}
