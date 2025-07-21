@@ -1188,20 +1188,22 @@ function DashboardPage({ user, onLogout }: { user: Member; onLogout: () => void 
                             <tr className="border-b-2 border-gray-200">
                               <th className="text-left py-3 px-4 text-purple-600 font-semibold">Judul Buku</th>
                               <th className="text-left py-3 px-4 text-purple-600 font-semibold">Tanggal Pinjam</th>
+                              <th className="text-left py-3 px-4 text-purple-600 font-semibold">Tanggal Pengembalian</th>
                               <th className="text-left py-3 px-4 text-purple-600 font-semibold">Status</th>
                               <th className="text-left py-3 px-4 text-purple-600 font-semibold">Jatuh Tempo</th>
                             </tr>
                           </thead>
                           <tbody>
                             {loadingTx ? (
-                              <tr><td colSpan={4} className="text-center py-12 text-gray-500">Memuat...</td></tr>
+                              <tr><td colSpan={5} className="text-center py-12 text-gray-500">Memuat...</td></tr>
                             ) : transactions.length === 0 ? (
-                              <tr><td colSpan={4} className="text-center py-12 text-gray-500">Tidak ada riwayat peminjaman</td></tr>
+                              <tr><td colSpan={5} className="text-center py-12 text-gray-500">Tidak ada riwayat peminjaman</td></tr>
                             ) : (
                               transactions.map((tx, idx) => (
                                 <tr key={idx} className="border-b border-gray-100">
                                   <td className="py-3 px-4">{tx.bookTitle}</td>
                                   <td className="py-3 px-4">{tx.borrowDate}</td>
+                                  <td className="py-3 px-4">{tx.returnDate ? tx.returnDate : '-'}</td>
                                   <td className="py-3 px-4 capitalize">{tx.status}</td>
                                   <td className="py-3 px-4">{tx.dueDate}</td>
                                 </tr>
